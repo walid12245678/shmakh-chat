@@ -1,13 +1,15 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import os
+import json
 
-# الاتصال بقاعدة البيانات
+# الاتصال بقاعدة البيانات باستخدام الإعدادات السرية
 if not firebase_admin._apps:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    key_path = os.path.join(current_dir, "key.json")
-    cred = credentials.Certificate(key_path)
+    # قراءة المفاتيح من Streamlit Secrets
+    key_dict = st.secrets["firebase_key"]
+    
+    # تهيئة Firebase باستخدام البيانات المقروءة من الصندوق
+    cred = credentials.Certificate(dict(key_dict))
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
