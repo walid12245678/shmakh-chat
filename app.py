@@ -1,50 +1,61 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 
-# 1. إعدادات الحماية (كلمة المرور)
-password = st.sidebar.text_input("أدخل كلمة المرور للدخول:", type="password")
+# --- إعدادات الحماية ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-if password != "123456": # يمكنك تغيير "123456" إلى أي كلمة مرور تريدها
-    st.warning("الرجاء إدخال كلمة المرور الصحيحة للوصول للتطبيق.")
-    st.stop() # هذا الأمر يوقف تنفيذ باقي الكود إذا كانت كلمة المرور خطأ
+if not st.session_state.logged_in:
+    password = st.sidebar.text_input("أدخل كلمة المرور:", type="password")
+    if password == "123456":
+        st.session_state.logged_in = True
+        st.rerun()
+    else:
+        st.warning("الرجاء إدخال كلمة المرور الصحيحة.")
+        st.stop()
 
-# 2. الاتصال بقاعدة البيانات
+# --- إعدادات اسم المستخدم ---
+if "username" not in st.session_state:
+    st.session_state.username = None
+
+# إذا كان المستخدم لم يحدد اسماً بعد
+if st.session_state.username is None:
+    new_name = st.text_input("أدخل اسمك (لن تتمكن من تغييره لمدة 7 أيام):")
+    if st.button("تأكيد الاسم"):
+        st.session_state.username = new_name
+        st.session_state.change_date = datetime.now()
+        st.rerun()
+    st.stop()
+
+# --- عرض واجهة الشات ---
+st.write(f"أهلاً بك يا **{st.session_state.username}**")
+
+# الاتصال بقاعدة البيانات
 if not firebase_admin._apps:
     key_dict = st.secrets["firebase_key"]
     cred = credentials.Certificate(dict(key_dict))
     firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
-st.title("💬 تطبيق الرسائل السحابي المباشر")
-
-# 3. واجهة إرسال الرسائل
-user = st.text_input("اسـمك:")
+# إرسال الرسالة باستخدام الاسم المحفوظ تلقائياً
 message = st.text_input("رسالتك:")
-
 if st.button("إرسال"):
-    if user and message:
+    if message:
         db.collection("messages").add({
-            "user": user,
+            "user": st.session_state.username,
             "text": message,
             "timestamp": datetime.now()
         })
         st.rerun()
-    else:
-        st.warning("الرجاء كتابة الاسم والرسالة")
 
-# 4. عرض الرسائل
-st.subheader("سجل الرسائل:")
+# عرض الرسائل
 messages = db.collection("messages").order_by("timestamp").stream()
-
 for msg in messages:
     data = msg.to_dict()
-    time_str = data['timestamp'].strftime("%H:%M") if 'timestamp' in data else ""
-    st.write(f"({time_str}) 👤 **{data.get('user', 'غير معروف')}**: {data.get('text', '')}")
+    st.write(f"👤 **{data.get('user')}**: {data.get('text')}")
 
-# 5. التحديث التلقائي
-time.sleep(3) 
+time.sleep(3)
 st.rerun()
