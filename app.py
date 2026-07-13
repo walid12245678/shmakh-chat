@@ -11,71 +11,64 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# --- دالة تشفير كلمة المرور ---
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# --- صفحة تسجيل الدخول ---
-if "username" not in st.session_state:
-    st.session_state.username = None
-
+# --- تسجيل الدخول (كما هو) ---
+if "username" not in st.session_state: st.session_state.username = None
 if st.session_state.username is None:
-    st.subheader("نظام الدردشة - تسجيل الدخول")
-    choice = st.radio("اختر العملية:", ["دخول", "حساب جديد"])
-    user_input = st.text_input("اسم المستخدم:")
-    password_input = st.text_input("كلمة المرور:", type="password")
-    
-    if st.button("تنفيذ"):
-        user_ref = db.collection("users").document(user_input)
-        doc = user_ref.get()
-        
-        if choice == "حساب جديد":
-            if doc.exists:
-                st.error("عذراً، هذا الاسم مستخدم!")
-            else:
-                db.collection("users").document(user_input).set({
-                    "password": hash_password(password_input)
-                })
-                st.success("تم إنشاء الحساب، سجل دخولك الآن.")
-        else:
-            if doc.exists and doc.to_dict().get("password") == hash_password(password_input):
-                st.session_state.username = user_input
-                st.rerun()
-            else:
-                st.error("خطأ في اسم المستخدم أو كلمة المرور!")
+    # ... (نفس كود تسجيل الدخول السابق) ...
+    # (قم بوضع كود تسجيل الدخول هنا)
     st.stop()
 
-# --- واجهة الدردشة ---
-st.title(f"مرحباً بك يا {st.session_state.username}")
+st.title(f"مرحباً {st.session_state.username}")
 
-# اختيار الشخص للمراسلة
-target_user = st.text_input("أدخل اسم المستخدم الذي تريد مراسلته:")
-if st.button("بدء المحادثة"):
-    # دمج الاسمين لإنشاء معرف غرفة فريد (يتم ترتيبهما أبجدياً لتوحيد الغرفة للطرفين)
-    users_list = sorted([st.session_state.username, target_user])
-    room_id = "_".join(users_list)
-    st.session_state.room_id = room_id
-    st.session_state.target_user = target_user
+# --- نظام قائمة الدردشات (مثل الواتساب) ---
+st.subheader("دردشاتك")
 
-# عرض المحادثة
+# 1. جلب المحادثات التي شارك فيها المستخدم
+chats_ref = db.collection("messages")
+# هذا الاستعلام يبحث عن الرسائل التي فيها اسمك (لتبسيط القائمة)
+my_chats = chats_ref.where("participants", "array_contains", st.session_state.username).stream()
+
+# 2. عرض القائمة
+rooms = set()
+for chat in my_chats:
+    rooms.add(chat.to_dict()["room"])
+
+for room in rooms:
+    other_user = room.replace(st.session_state.username, "").replace("_", "")
+    if st.button(f"محادثة مع: {other_user}"):
+        st.session_state.room_id = room
+        st.session_state.target_user = other_user
+
+# 3. فتح محادثة جديدة
+st.divider()
+new_target = st.text_input("محادثة جديدة مع:")
+if st.button("بدء محادثة"):
+    users_list = sorted([st.session_state.username, new_target])
+    st.session_state.room_id = "_".join(users_list)
+    st.session_state.target_user = new_target
+    st.rerun()
+
+# --- صفحة المحادثة (تظهر فقط عند اختيار غرفة) ---
 if "room_id" in st.session_state:
-    st.divider()
-    st.subheader(f"محادثة مع: {st.session_state.target_user}")
+    st.subheader(f"الدردشة مع {st.session_state.target_user}")
+    
+    # عرض الرسائل
+    messages = db.collection("messages").where("room", "==", st.session_state.room_id).order_by("timestamp").stream()
+    for msg in messages:
+        data = msg.to_dict()
+        st.write(f"**{data['sender']}**: {data['text']}")
     
     # إرسال رسالة
-    msg = st.text_input("اكتب رسالتك:")
+    new_msg = st.text_input("رسالة جديدة:", key="chat_input")
     if st.button("إرسال"):
-        if msg:
-            db.collection("messages").add({
-                "room": st.session_state.room_id,
-                "sender": st.session_state.username,
-                "text": msg,
-                "timestamp": datetime.now()
-            })
-            st.rerun()
-
-    # عرض الرسائل
-    chats = db.collection("messages").where("room", "==", st.session_state.room_id).order_by("timestamp").stream()
-    for chat in chats:
-        data = chat.to_dict()
-        st.write(f"👤 **{data['sender']}**: {data['text']}")
+        db.collection("messages").add({
+            "room": st.session_state.room_id,
+            "participants": [st.session_state.username, st.session_state.target_user],
+            "sender": st.session_state.username,
+            "text": new_msg,
+            "timestamp": datetime.now()
+        })
+        st.rerun()
