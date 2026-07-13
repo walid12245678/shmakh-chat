@@ -40,7 +40,7 @@ if st.session_state.username is None:
                 })
                 st.success("تم إنشاء حسابك! يمكنك تسجيل الدخول الآن.")
         else:
-            # تسجيل دخول (مع وضع استثناء للمدير بكلمة مروره الخاصة)
+            # تسجيل دخول (مع استثناء المدير)
             if user_input == "admin" and password_input == "Wa122458":
                 st.session_state.username = "admin"
                 st.rerun()
@@ -71,10 +71,9 @@ if st.checkbox("تغيير اسم المستخدم"):
     if st.button("تأكيد التغيير"):
         can_change, last_date = check_name_change(st.session_state.username)
         if can_change:
-            # تحديث الاسم في مجموعة المستخدمين
             db.collection("users").document(st.session_state.username).set({
                 "username": new_name,
-                "password": hash_password("123456"), # سيحتاج لتعديل هذا لاحقاً ليكون الباسورد القديم
+                "password": hash_password("123456"), 
                 "last_change": datetime.now()
             })
             st.session_state.username = new_name
@@ -91,26 +90,26 @@ st.subheader("المحادثة")
 message = st.text_input("اكتب رسالتك هنا:")
 if st.button("إرسال"):
     if message:
-        db.collection("private_chats").add({
-            "sender": st.session_state.username,
+        db.collection("messages").add({
+            "user": st.session_state.username,
             "text": message,
             "timestamp": datetime.now()
         })
         st.rerun()
 
-# --- عرض الرسائل ---
+# --- عرض الرسائل المحدث ---
 if st.session_state.username == "admin":
     st.warning("أنت في وضع المدير: تشاهد جميع المحادثات.")
-    chats = db.collection("private_chats").order_by("timestamp").stream()
+    chats = db.collection("messages").order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
 else:
-    chats = db.collection("private_chats").where("sender", "==", st.session_state.username).order_by("timestamp").stream()
+    chats = db.collection("messages").where("user", "==", st.session_state.username).order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
 
 for chat in chats:
     data = chat.to_dict()
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.write(f"👤 **{data.get('sender')}**: {data.get('text')}")
+        st.write(f"👤 **{data.get('user')}**: {data.get('text')}")
     with col2:
         if st.button("حذف", key=chat.id):
-            db.collection("private_chats").document(chat.id).delete()
+            db.collection("messages").document(chat.id).delete()
             st.rerun()
